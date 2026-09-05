@@ -3,8 +3,9 @@
 # ⚡ Anamika Bulletproof Hermes Agent Installer for Android (Termux)
 # ==============================================================================
 # 1-Click Native Installer for Hermes Agent OS on Android/Termux.
-# Fixes Android Rust/Maturin build bottlenecks, configures native C toolchains,
-# installs tested Termux profile, sets up CPU Wakelock & CLI Launchers.
+# Automatically provisions Python 3.11 via TUR repo, configures native Android
+# toolchains (Clang, Rust, Maturin, LLD, OpenSSL), creates isolated venv,
+# and deploys stable Termux profile.
 #
 # Usage:
 #   curl -sSL https://raw.githubusercontent.com/arificialanamika/termux-hermes-agent/main/install.sh | bash
@@ -20,7 +21,7 @@ NC='\033[0m'
 BOLD='\033[1m'
 
 echo -e "${CYAN}====================================================================${NC}"
-echo -e "${GREEN}${BOLD}⚡ [Anamika] Autonomous Hermes Agent OS Installer (Termux Android)${NC}"
+echo -e "${GREEN}${BOLD}⚡ [Anamika] Autonomous Hermes Agent OS Installer (Python 3.11 Termux)${NC}"
 echo -e "${CYAN}====================================================================${NC}"
 
 # Parse optional arguments
@@ -50,15 +51,21 @@ if command -v termux-wake-lock >/dev/null 2>&1; then
     echo -e "    ${GREEN}[✓] CPU Wakelock active (prevents sleep during background runs).${NC}"
 fi
 
-# Step 2: Install Core Native Android Toolchains & Dependencies
-echo -e "${YELLOW}[+] Step 2/6: Installing Android Native Toolchains & Pre-compiled Packages...${NC}"
+# Step 2: Install Python 3.11 via TUR Repo & Build Dependencies
+echo -e "${YELLOW}[+] Step 2/6: Setting up Python 3.11 & Native Android Toolchains...${NC}"
 pkg update -y -o Dpkg::Options::="--force-confold" || true
 
-# Try adding TUR repo for fast pre-compiled ARM wheels
+# 1. Enable Termux User Repository (TUR) for pinned Python 3.11
+echo -e "    [*] Enabling Termux User Repository (tur-repo)..."
 pkg install -y -o Dpkg::Options::="--force-confold" tur-repo >/dev/null 2>&1 || true
 
+# 2. Install Python 3.11 specifically
+echo -e "    [*] Installing Python 3.11 package..."
+pkg install -y -o Dpkg::Options::="--force-confold" python3.11 >/dev/null 2>&1 || \
+pkg install -y -o Dpkg::Options::="--force-confold" python3.12 >/dev/null 2>&1 || true
+
+# 3. Install core toolchains
 CORE_PKGS=(
-    python
     git
     clang
     rust
@@ -81,7 +88,27 @@ for pkg in "${CORE_PKGS[@]}"; do
     echo -e "    [*] Installing $pkg..."
     pkg install -y -o Dpkg::Options::="--force-confold" "$pkg" >/dev/null 2>&1 || pkg install -y "$pkg" >/dev/null 2>&1 || true
 done
-echo -e "    ${GREEN}[✓] Core build packages installed.${NC}"
+
+# Detect and select compatible Python interpreter (>=3.11, <3.14)
+TARGET_PYTHON=""
+for py in python3.11 python3.12 python3.13 python3 python; do
+    if command -v "$py" >/dev/null 2>&1; then
+        PY_PATH="$(command -v "$py")"
+        if "$PY_PATH" -c 'import sys; raise SystemExit(0 if (3, 11) <= sys.version_info[:2] < (3, 14) else 1)' 2>/dev/null; then
+            TARGET_PYTHON="$PY_PATH"
+            break
+        fi
+    fi
+done
+
+if [ -z "$TARGET_PYTHON" ]; then
+    echo -e "    ${YELLOW}[!] Retrying direct python3.11 installation...${NC}"
+    pkg install -y python3.11
+    TARGET_PYTHON="$(command -v python3.11)"
+fi
+
+PY_VER=$("$TARGET_PYTHON" --version 2>&1)
+echo -e "    ${GREEN}[✓] Selected Python Interpreter: $TARGET_PYTHON ($PY_VER)${NC}"
 
 # Step 3: Configure Target Architecture & Compiler Flags
 echo -e "${YELLOW}[+] Step 3/6: Configuring Android Architecture & Compiler Flags...${NC}"
@@ -100,7 +127,7 @@ export CFLAGS="-Wno-error=incompatible-function-pointer-types"
 export ANDROID_API_LEVEL="$(getprop ro.build.version.sdk 2>/dev/null || echo 24)"
 export UV_NO_CONFIG=1
 
-echo -e "    ${GREEN}[✓] Target: $CARGO_BUILD_TARGET (API Level: $ANDROID_API_LEVEL)${NC}"
+echo -e "    ${GREEN}[✓] Target: $CARGO_BUILD_TARGET (Android API: $ANDROID_API_LEVEL)${NC}"
 
 # Step 4: Clone / Update Hermes Agent Source Repository
 echo -e "${YELLOW}[+] Step 4/6: Fetching Hermes Agent Source Code...${NC}"
@@ -120,13 +147,17 @@ else
     cd "$INSTALL_DIR"
 fi
 
-# Step 5: Setup Python Virtual Environment & Install Tested Termux Profile
-echo -e "${YELLOW}[+] Step 5/6: Building Python Virtual Environment & Installing Dependencies...${NC}"
+# Step 5: Setup Python 3.11 Virtual Environment & Install Tested Termux Profile
+echo -e "${YELLOW}[+] Step 5/6: Building Python 3.11 Virtual Environment...${NC}"
 rm -rf venv
-python3 -m venv venv
+"$TARGET_PYTHON" -m venv venv
 VENV_PYTHON="$INSTALL_DIR/venv/bin/python"
 VENV_PIP="$INSTALL_DIR/venv/bin/pip"
 
+VENV_VER=$("$VENV_PYTHON" --version 2>&1)
+echo -e "    ${GREEN}[✓] Virtual Environment active with: $VENV_VER${NC}"
+
+echo -e "    [*] Upgrading pip, setuptools, wheel..."
 "$VENV_PIP" install --upgrade pip setuptools wheel >/dev/null 2>&1 || true
 
 # Prebuild psutil android compatibility shim
@@ -135,7 +166,7 @@ if [ -f "$INSTALL_DIR/scripts/install_psutil_android.py" ]; then
     "$VENV_PYTHON" "$INSTALL_DIR/scripts/install_psutil_android.py" --pip "$VENV_PIP" >/dev/null 2>&1 || true
 fi
 
-# Install stable Termux profile (avoids unsupported native scraper wheels)
+# Install stable Termux profile
 echo -e "    [*] Installing Hermes Agent packages (Termux profile)..."
 if [ -f "constraints-termux.txt" ]; then
     "$VENV_PIP" install -e '.[termux]' -c constraints-termux.txt || \
@@ -145,7 +176,7 @@ else
     "$VENV_PIP" install -e '.'
 fi
 
-echo -e "    ${GREEN}[✓] Hermes Agent core & dependencies installed successfully.${NC}"
+echo -e "    ${GREEN}[✓] Hermes Agent packages installed successfully.${NC}"
 
 # Step 6: Create Launchers and Shell Aliases
 echo -e "${YELLOW}[+] Step 6/6: Configuring CLI Launchers & Aliases...${NC}"
@@ -216,14 +247,14 @@ fi
 
 echo ""
 echo -e "${CYAN}====================================================================${NC}"
-echo -e "${GREEN}${BOLD}🎉 [SUCCESS] Hermes Agent OS is Ready on Your Android Phone!${NC}"
+echo -e "${GREEN}${BOLD}🎉 [SUCCESS] Hermes Agent OS (Python 3.11) is Ready on Android!${NC}"
 echo -e "${CYAN}====================================================================${NC}"
 echo ""
-echo -e "🚀 ${BOLD}How to Run Hermes:${NC}"
-echo -e "  • Start Interactive Chat : ${CYAN}hermes${NC}  (or simply ${CYAN}ha${NC})"
+echo -e "🚀 ${BOLD}Commands to use:${NC}"
+echo -e "  • Start Interactive Chat : ${CYAN}hermes${NC} (or ${CYAN}ha${NC})"
 echo -e "  • Setup Wizard           : ${CYAN}hermes setup${NC}"
-echo -e "  • Pick Model / Provider  : ${CYAN}hermes model${NC}"
-echo -e "  • Environment Diagnostics: ${CYAN}hermes doctor${NC}"
+echo -e "  • Model Selector         : ${CYAN}hermes model${NC}"
+echo -e "  • Doctor / Diagnostics   : ${CYAN}hermes doctor${NC}"
 echo ""
-echo -e "💡 Run ${GREEN}hermes${NC} to start pair programming on your phone!"
+echo -e "💡 Run ${GREEN}hermes${NC} to start pair programming!"
 echo -e "${CYAN}====================================================================${NC}"
