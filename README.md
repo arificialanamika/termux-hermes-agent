@@ -1,19 +1,19 @@
-# ⚡ Termux Hermes Agent Installer (Android)
+# ⚡ Termux Hermes Agent OS & Bot Gateway (Android)
 
 <p align="center">
   <img src="https://img.shields.io/badge/Platform-Android_Termux-10B981?style=for-the-badge&logo=android&logoColor=white" />
   <img src="https://img.shields.io/badge/Hermes_Agent-Nous_Research-8B5CF6?style=for-the-badge&logo=openai&logoColor=white" />
-  <img src="https://img.shields.io/badge/Architecture-ARM64_%26_ARMv7-3B82F6?style=for-the-badge&logo=arm&logoColor=white" />
-  <img src="https://img.shields.io/badge/Status-Tested_%26_Automated-F59E0B?style=for-the-badge&logo=statuspage&logoColor=white" />
+  <img src="https://img.shields.io/badge/Engine-PRoot_Ubuntu_ARM64-3B82F6?style=for-the-badge&logo=ubuntu&logoColor=white" />
+  <img src="https://img.shields.io/badge/Status-Ultra_Fast_2_Min_Install-F59E0B?style=for-the-badge&logo=statuspage&logoColor=white" />
 </p>
 
-An automated, bulletproof **1-Line Installer** for running **Hermes Agent** (by Nous Research) natively on Android via Termux.
+An automated, high-speed **1-Line Installer & Bot Gateway Connector** for running **Hermes Agent** natively on Android (Termux) with zero wheel compilation errors and 1-click Telegram / Discord bot connection.
 
 ---
 
-## 🚀 1-Line Quick Install
+## 🚀 1. Install Hermes Agent (2 Minutes)
 
-Open **Termux** on your Android device, paste and run:
+Open **Termux** on your phone, paste and run:
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/arificialanamika/termux-hermes-agent/main/install.sh | bash
@@ -21,48 +21,40 @@ curl -sSL https://raw.githubusercontent.com/arificialanamika/termux-hermes-agent
 
 ---
 
-## ⚡ Optional: Install & Pre-configure API Key in 1 Step
+## 🤖 2. Connect Hermes to Telegram Bot (1-Click)
 
-You can pass your API Key directly during installation:
+To communicate with your phone's Hermes Agent from **Telegram** (voice notes, text, anywhere on the go):
+
+1. Open Telegram, message `@BotFather`, send `/newbot`, and copy your `BOT_TOKEN`.
+2. Run this single command in Termux:
 
 ```bash
-# For OpenRouter:
-curl -sSL https://raw.githubusercontent.com/arificialanamika/termux-hermes-agent/main/install.sh | bash -s -- --api-key "sk-or-v1-..." --provider openrouter
+curl -sSL https://raw.githubusercontent.com/arificialanamika/termux-hermes-agent/main/setup-gateway.sh | bash -s -- telegram <YOUR_TELEGRAM_BOT_TOKEN>
+```
 
-# For Google Gemini:
-curl -sSL https://raw.githubusercontent.com/arificialanamika/termux-hermes-agent/main/install.sh | bash -s -- --api-key "AIzaSy..." --provider google
+*Hermes Gateway will start in the background, and you can start chatting directly in Telegram!*
+
+---
+
+## 🎮 3. Connect Hermes to Discord Bot (1-Click)
+
+To connect your Hermes Agent to **Discord**:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/arificialanamika/termux-hermes-agent/main/setup-gateway.sh | bash -s -- discord <YOUR_DISCORD_BOT_TOKEN>
 ```
 
 ---
 
-## 🛠️ What This Script Automates
-
-1. ⚙️ **Native Android C/Rust/Python Toolchain:** Installs `clang`, `rust`, `make`, `python3`, `pkg-config`, `libffi`, `openssl`, `nodejs-lts`, and `ripgrep`.
-2. 🔋 **CPU WakeLock:** Acquires Termux WakeLock to prevent Android OS from sleeping during installation.
-3. 📦 **Hermes Core Installation:** Pulls and builds Hermes Agent virtual environment with all required Android C-extensions.
-4. ⚡ **Shell Aliases & PATH Linking:** Adds quick shortcuts (`ha`, `ha-chat`, `ha-doctor`, `ha-model`) to your shell.
-
----
-
-## 🎯 How to Use Hermes on Android
-
-Once installed, use any of these commands in Termux:
+## 🎯 Direct CLI Commands (Inside Termux)
 
 | Command | Action |
 | :--- | :--- |
-| `hermes` (or `ha`) | Launch full interactive chat session |
-| `hermes chat -q "Your prompt"` | Quick one-shot query |
-| `hermes setup` | Launch configuration & provider wizard |
+| `hermes` (or `ha`) | Launch full interactive CLI chat session |
+| `hermes chat -q "query"` | Quick one-shot answer |
+| `hermes setup` | Setup wizard (Model / Provider / Keys) |
 | `hermes model` | Change LLM model or provider |
-| `hermes doctor` | Check environment and tool health |
-| `hermes gateway` | Run multi-platform bot gateway (Discord/Telegram/WhatsApp) |
-
----
-
-## 📱 Prerequisites (Android)
-
-* **Termux from F-Droid** (Recommended: Do NOT use Google Play Store version as it is outdated).
-* In Android Settings, set Termux Battery usage to **Unrestricted**.
+| `hermes doctor` | Environment diagnostics & healthcheck |
 
 ---
 
