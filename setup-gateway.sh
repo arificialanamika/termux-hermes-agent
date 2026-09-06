@@ -1,15 +1,15 @@
 #!/data/data/com.termux/files/usr/bin/bash
 # ==============================================================================
-# ⚡ Anamika 1-Line Hermes Gateway Setup (Telegram & Discord Bot Connector)
+# ⚡ Anamika 1-Line Hermes Gateway Setup (Secure Telegram & Discord Connector)
 # ==============================================================================
-# Automatically connects Hermes Agent to Telegram or Discord in 1 command,
-# saves the bot token, enables gateway platforms, and starts the background daemon.
+# Connects Hermes Agent to Telegram / Discord with STRICT User ID Whitelisting
+# so that only YOU can talk to and control your Hermes bot.
 #
-# Usage (Telegram):
-#   curl -sSL https://raw.githubusercontent.com/arificialanamika/termux-hermes-agent/main/setup-gateway.sh | bash -s -- telegram <TELEGRAM_BOT_TOKEN>
+# Usage (Secure Telegram with Whitelist):
+#   curl -sSL https://raw.githubusercontent.com/arificialanamika/termux-hermes-agent/main/setup-gateway.sh | bash -s -- telegram <BOT_TOKEN> <YOUR_USER_ID>
 #
-# Usage (Discord):
-#   curl -sSL https://raw.githubusercontent.com/arificialanamika/termux-hermes-agent/main/setup-gateway.sh | bash -s -- discord <DISCORD_BOT_TOKEN>
+# Example:
+#   bash setup-gateway.sh telegram 123456:ABC-DEF 9974870207
 # ==============================================================================
 
 set -e
@@ -23,17 +23,18 @@ BOLD='\033[1m'
 
 PLATFORM="${1:-telegram}"
 BOT_TOKEN="$2"
+ALLOWED_USER="${3:-}"
 
 echo -e "${CYAN}====================================================================${NC}"
-echo -e "${GREEN}${BOLD}⚡ [Anamika] Hermes Agent Gateway 1-Click Bot Connector${NC}"
+echo -e "${GREEN}${BOLD}⚡ [Anamika] Hermes Agent Gateway Secure Whitelisted Connector${NC}"
 echo -e "${CYAN}====================================================================${NC}"
 
 if [ -z "$BOT_TOKEN" ]; then
     echo -e "${RED}[!] Error: Bot Token is required.${NC}"
     echo ""
     echo "Usage Examples:"
-    echo "  bash setup-gateway.sh telegram 123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ"
-    echo "  bash setup-gateway.sh discord MTA5ODc2NTQzMjEwOTg3NjU0.XXXXXX.YYYYYY"
+    echo "  bash setup-gateway.sh telegram <BOT_TOKEN> [YOUR_TELEGRAM_USER_ID]"
+    echo "  bash setup-gateway.sh discord <BOT_TOKEN> [YOUR_DISCORD_USER_ID]"
     echo ""
     exit 1
 fi
@@ -49,18 +50,29 @@ mkdir -p /root/.hermes/logs
 ENV_FILE="/root/.hermes/.env"
 touch "\$ENV_FILE"
 
-# Remove old token for platform
+# Clean old tokens and allowlists
 sed -i '/TELEGRAM_BOT_TOKEN/d' "\$ENV_FILE" || true
+sed -i '/TELEGRAM_ALLOWED_USERS/d' "\$ENV_FILE" || true
 sed -i '/DISCORD_BOT_TOKEN/d' "\$ENV_FILE" || true
+sed -i '/DISCORD_ALLOWED_USERS/d' "\$ENV_FILE" || true
 
 if [ "$PLATFORM_LOWER" = "telegram" ]; then
     echo "TELEGRAM_BOT_TOKEN=$BOT_TOKEN" >> "\$ENV_FILE"
+    if [ -n "$ALLOWED_USER" ]; then
+        echo "TELEGRAM_ALLOWED_USERS=$ALLOWED_USER" >> "\$ENV_FILE"
+        echo "    [✓] Security Whitelist Activated: Only User ID '$ALLOWED_USER' is permitted."
+    else
+        echo "    [!] Warning: No User ID provided. Any Telegram user can talk to the bot."
+    fi
 elif [ "$PLATFORM_LOWER" = "discord" ]; then
     echo "DISCORD_BOT_TOKEN=$BOT_TOKEN" >> "\$ENV_FILE"
+    if [ -n "$ALLOWED_USER" ]; then
+        echo "DISCORD_ALLOWED_USERS=$ALLOWED_USER" >> "\$ENV_FILE"
+    fi
 fi
 chmod 600 "\$ENV_FILE"
 
-echo "    [✓] Bot token stored in ~/.hermes/.env"
+echo "    [✓] Bot credentials saved securely in ~/.hermes/.env"
 
 # Kill old gateway processes
 pkill -f "hermes gateway" || true
@@ -91,19 +103,15 @@ chmod +x ~/.termux/boot/start-hermes-gateway.sh
 
 echo ""
 echo -e "${CYAN}====================================================================${NC}"
-echo -e "${GREEN}${BOLD}🎉 [SUCCESS] Hermes Agent is now LIVE on ${PLATFORM_LOWER}!${NC}"
+echo -e "${GREEN}${BOLD}🎉 [SUCCESS] Hermes Agent is now SECURELY LIVE on ${PLATFORM_LOWER}!${NC}"
 echo -e "${CYAN}====================================================================${NC}"
 echo ""
-echo -e "💬 ${BOLD}How to Chat with your Bot:${NC}"
-if [ "$PLATFORM_LOWER" = "telegram" ]; then
-    echo -e "  1. Open Telegram on your phone."
-    echo -e "  2. Search for your bot handle."
-    echo -e "  3. Click ${CYAN}/start${NC} and start talking (Text or Voice notes)!"
-elif [ "$PLATFORM_LOWER" = "discord" ]; then
-    echo -e "  1. Invite your bot to your Discord Server."
-    echo -e "  2. Mention your bot or send a DM to start interacting!"
+if [ -n "$ALLOWED_USER" ]; then
+    echo -e "🔒 ${BOLD}Access Control:${NC} ${GREEN}LOCKED to User ID: $ALLOWED_USER${NC} (Strangers will be ignored automatically)."
+else
+    echo -e "⚠️  ${BOLD}Notice:${NC} To restrict access to yourself, find your numeric ID from @userinfobot and pass it as the 3rd argument."
 fi
 echo ""
-echo -e "📊 To check gateway logs anytime in Termux:"
-echo -e "  ${CYAN}proot-distro login ubuntu -- tail -f /root/.hermes/logs/gateway.log${NC}"
+echo -e "💬 ${BOLD}Start chatting on ${PLATFORM_LOWER}:${NC}"
+echo -e "  Open your bot and send ${CYAN}/start${NC} or any message!"
 echo -e "${CYAN}====================================================================${NC}"
