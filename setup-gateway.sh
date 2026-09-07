@@ -3,13 +3,10 @@
 # ⚡ Anamika 1-Line Hermes Gateway Setup (Secure Telegram & Discord Connector)
 # ==============================================================================
 # Connects Hermes Agent to Telegram / Discord with STRICT User ID Whitelisting
-# so that only YOU can talk to and control your Hermes bot.
+# and Native Termux Daemon Management (Zero systemd/dbus errors).
 #
-# Usage (Secure Telegram with Whitelist):
+# Usage:
 #   curl -sSL https://raw.githubusercontent.com/arificialanamika/termux-hermes-agent/main/setup-gateway.sh | bash -s -- telegram <BOT_TOKEN> <YOUR_USER_ID>
-#
-# Example:
-#   bash setup-gateway.sh telegram 123456:ABC-DEF 9974870207
 # ==============================================================================
 
 set -e
@@ -41,7 +38,7 @@ fi
 
 PLATFORM_LOWER=$(echo "$PLATFORM" | tr '[:upper:]' '[:lower:]')
 
-echo -e "${YELLOW}[+] Step 1/3: Configuring Gateway for Platform: ${BOLD}${PLATFORM_LOWER}${NC}"
+echo -e "${YELLOW}[+] Step 1/3: Configuring Credentials for Platform: ${BOLD}${PLATFORM_LOWER}${NC}"
 
 proot-distro login ubuntu -- bash -s << GATEWAY_SCRIPT
 set -e
@@ -51,10 +48,10 @@ ENV_FILE="/root/.hermes/.env"
 touch "\$ENV_FILE"
 
 # Clean old tokens and allowlists
-sed -i '/TELEGRAM_BOT_TOKEN/d' "\$ENV_FILE" || true
-sed -i '/TELEGRAM_ALLOWED_USERS/d' "\$ENV_FILE" || true
-sed -i '/DISCORD_BOT_TOKEN/d' "\$ENV_FILE" || true
-sed -i '/DISCORD_ALLOWED_USERS/d' "\$ENV_FILE" || true
+sed -i '/TELEGRAM_BOT_TOKEN/d' "\$ENV_FILE" 2>/dev/null || true
+sed -i '/TELEGRAM_ALLOWED_USERS/d' "\$ENV_FILE" 2>/dev/null || true
+sed -i '/DISCORD_BOT_TOKEN/d' "\$ENV_FILE" 2>/dev/null || true
+sed -i '/DISCORD_ALLOWED_USERS/d' "\$ENV_FILE" 2>/dev/null || true
 
 if [ "$PLATFORM_LOWER" = "telegram" ]; then
     echo "TELEGRAM_BOT_TOKEN=$BOT_TOKEN" >> "\$ENV_FILE"
@@ -73,31 +70,93 @@ fi
 chmod 600 "\$ENV_FILE"
 
 echo "    [✓] Bot credentials saved securely in ~/.hermes/.env"
-
-# Kill old gateway processes
-pkill -f "hermes gateway" || true
-sleep 1
-
-# Start Gateway in background
-echo "[+] Step 2/3: Starting Hermes Gateway daemon..."
-nohup hermes gateway > /root/.hermes/logs/gateway.log 2>&1 &
-sleep 3
-
-# Verify Gateway Status
-if pgrep -f "hermes gateway" >/dev/null 2>&1; then
-    echo "    [✓] Gateway daemon is ONLINE and running in background!"
-else
-    echo "    [!] Checking gateway output..."
-    cat /root/.hermes/logs/gateway.log | tail -n 10 || true
-fi
 GATEWAY_SCRIPT
 
-# Step 3: Add auto-start to Termux boot if termux-boot exists
+# Step 2: Install Native Termux Daemon Manager
+PREFIX_BIN="/data/data/com.termux/files/usr/bin"
+HA_GATEWAY="$PREFIX_BIN/ha-gateway"
+
+if ! command -v tmux >/dev/null 2>&1; then
+    echo -e "${YELLOW}[+] Installing tmux package...${NC}"
+    pkg install -y tmux >/dev/null 2>&1 || true
+fi
+
+cat << 'EOF' > "$HA_GATEWAY"
+#!/data/data/com.termux/files/usr/bin/bash
+ACTION="${1:-status}"
+TMUX_SESSION="hermes-gateway"
+
+if command -v termux-wake-lock >/dev/null 2>&1; then
+    termux-wake-lock
+fi
+
+case "$ACTION" in
+    start|up)
+        if tmux has-session -t "$TMUX_SESSION" 2>/dev/null || pgrep -f "hermes gateway" >/dev/null 2>&1; then
+            echo "[✓] Hermes Gateway is already running."
+            exit 0
+        fi
+        proot-distro login ubuntu -- mkdir -p /root/.hermes/logs
+        if command -v tmux >/dev/null 2>&1; then
+            tmux new-session -d -s "$TMUX_SESSION" "proot-distro login ubuntu -- hermes gateway 2>&1 | tee -a /root/.hermes/logs/gateway.log"
+        else
+            proot-distro login ubuntu -- bash -c 'nohup hermes gateway > /root/.hermes/logs/gateway.log 2>&1 &'
+        fi
+        sleep 2
+        echo "[✓] Hermes Gateway started in background."
+        ;;
+    stop|down)
+        tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
+        proot-distro login ubuntu -- pkill -f "hermes gateway" 2>/dev/null || true
+        killall -9 hermes 2>/dev/null || true
+        echo "[✓] Hermes Gateway stopped."
+        ;;
+    restart|reload)
+        tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
+        proot-distro login ubuntu -- pkill -f "hermes gateway" 2>/dev/null || true
+        killall -9 hermes 2>/dev/null || true
+        sleep 1
+        proot-distro login ubuntu -- mkdir -p /root/.hermes/logs
+        if command -v tmux >/dev/null 2>&1; then
+            tmux new-session -d -s "$TMUX_SESSION" "proot-distro login ubuntu -- hermes gateway 2>&1 | tee -a /root/.hermes/logs/gateway.log"
+        else
+            proot-distro login ubuntu -- bash -c 'nohup hermes gateway > /root/.hermes/logs/gateway.log 2>&1 &'
+        fi
+        sleep 2
+        echo "[✓] Hermes Gateway restarted."
+        ;;
+    status|check)
+        if tmux has-session -t "$TMUX_SESSION" 2>/dev/null || pgrep -f "hermes gateway" >/dev/null 2>&1; then
+            echo "● ONLINE (Running in background)"
+            proot-distro login ubuntu -- cat /root/.hermes/logs/gateway.log 2>/dev/null | tail -n 10 || true
+        else
+            echo "○ STOPPED (Offline)"
+        fi
+        ;;
+    logs|log)
+        proot-distro login ubuntu -- tail -f /root/.hermes/logs/gateway.log
+        ;;
+    attach|console)
+        tmux attach -t "$TMUX_SESSION"
+        ;;
+    *)
+        echo "Usage: ha-gateway {start|stop|restart|status|logs|attach}"
+        exit 1
+        ;;
+esac
+EOF
+chmod +x "$HA_GATEWAY"
+
+# Step 3: Launch Gateway via Native Manager
+echo -e "${YELLOW}[+] Step 2/3: Launching Hermes Gateway via Native Daemon...${NC}"
+"$HA_GATEWAY" restart
+
+# Step 4: Add auto-start to Termux boot
 mkdir -p ~/.termux/boot
 cat << 'EOF' > ~/.termux/boot/start-hermes-gateway.sh
 #!/data/data/com.termux/files/usr/bin/bash
 termux-wake-lock
-proot-distro login ubuntu -- bash -c 'nohup hermes gateway > /root/.hermes/logs/gateway.log 2>&1 &'
+/data/data/com.termux/files/usr/bin/ha-gateway start
 EOF
 chmod +x ~/.termux/boot/start-hermes-gateway.sh
 
@@ -106,12 +165,9 @@ echo -e "${CYAN}================================================================
 echo -e "${GREEN}${BOLD}🎉 [SUCCESS] Hermes Agent is now SECURELY LIVE on ${PLATFORM_LOWER}!${NC}"
 echo -e "${CYAN}====================================================================${NC}"
 echo ""
-if [ -n "$ALLOWED_USER" ]; then
-    echo -e "🔒 ${BOLD}Access Control:${NC} ${GREEN}LOCKED to User ID: $ALLOWED_USER${NC} (Strangers will be ignored automatically)."
-else
-    echo -e "⚠️  ${BOLD}Notice:${NC} To restrict access to yourself, find your numeric ID from @userinfobot and pass it as the 3rd argument."
-fi
-echo ""
-echo -e "💬 ${BOLD}Start chatting on ${PLATFORM_LOWER}:${NC}"
-echo -e "  Open your bot and send ${CYAN}/start${NC} or any message!"
+echo -e "🚀 ${BOLD}Gateway Commands in Termux:${NC}"
+echo -e "  • Check status : ${CYAN}ha-gateway status${NC}"
+echo -e "  • View logs    : ${CYAN}ha-gateway logs${NC}"
+echo -e "  • Stop gateway : ${CYAN}ha-gateway stop${NC}"
+echo -e "  • Restart      : ${CYAN}ha-gateway restart${NC}"
 echo -e "${CYAN}====================================================================${NC}"
